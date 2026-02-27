@@ -1,0 +1,270 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# import necessary packages
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(ggthemes)
+library(sf)
+library(tmap)
+library(topsis)
+library(scales)
+```
+
+```{r}
+# import data
+test_data <- read_excel('Test.xlsx', sheet=1)
+head(test_data)
+summary(test_data)
+
+```
+```{r}
+# number of married persons who took part in the survey  (variable fc11).
+
+sum(test_data$fc11 == 2, na.rm = TRUE)
+
+# 1062 married persons took part in the survey  (variable fc11).
+```
+
+```{r}
+# the average age (variable age) of married persons (variable fc11). 
+
+mean(test_data$age[test_data$fc11 == 2], na.rm = TRUE)
+
+# The average age (variable age) of married persons (variable fc11) was 44.83 years. 
+```
+
+```{r}
+# basic descriptive statistics of income (variable fp65) (min, max, mean, standard deviation and median) for males (variable sex).                                                                              
+summary_stats <- test_data$fp65[test_data$sex == 1]
+
+stats <- c(
+  Min = min(summary_stats, na.rm = TRUE),
+  Max = max(summary_stats, na.rm = TRUE),
+  Mean = mean(summary_stats, na.rm = TRUE),
+  SD = sd(summary_stats, na.rm = TRUE),
+  Median = median(summary_stats, na.rm = TRUE)
+)
+print(stats)
+
+# Min :- 200.000, Max :- 30000.000,  Mean :- 2251.423, SD :- 1898.573, Median :- 2000.000 
+          
+```
+
+```{r}
+# contingency table, which contains information about the number of respondents by class of locality (variable class) and the variable fp29 (What is more important in your life?).                                                                                                    
+# Create the contingency table
+table_result <- table(test_data$class, test_data$fp29)
+
+# Print the table
+print(table_result)
+```
+
+```{r}
+# Recode variable age into two levels: 1 – up to 35 years (including 35), 2 – above 35 years.
+
+# Recode age into two levels
+test_data$age_group[test_data$age <= 35] <- 1
+test_data$age_group[test_data$age > 35] <- 2
+
+head(test_data)
+
+# Compute frequencies
+age_table_result <- table(test_data$sex, test_data$age_group)
+age_table_result
+```
+
+
+```{r}
+# information about the percentage of respondents by marital status (variable fc11).
+
+test_data %>%
+  count(fc11) %>%
+  mutate(percentage = (n / sum(n)) * 100)
+```
+
+```{r}
+# interpret the Pearson coefficient of correlation between height (variable fp55) and weight (variable fp56) for males (variable sex) living in 500T+ cities (variable class).	   
+
+# Filter the data for males and 500T+ cities
+filtered_data <- test_data %>%
+  filter(sex == 1, class == 1)
+
+# Compute the Pearson correlation coefficient between height (fp55) and weight (fp56)
+corr_1 <- cor(filtered_data$fp55, filtered_data$fp56, method = "pearson")
+
+# Print the correlation result
+print(corr_1)
+
+# A value of 0.22 for the Pearson coefficient suggests a weak positive correlation between fp55 and fp56, suggesting that as height increases, weight also tends to increase.
+```
+
+```{r}
+# Quartiles of height (variable fp55) for females (variable sex)
+
+# Filter the data for females (sex == "Female")
+female_data <- test_data[test_data$sex == 2, ]
+
+# quartiles for the height variable (fp55)
+quartiles <- quantile(female_data$fp55, na.rm = TRUE)
+print(quartiles)
+```
+
+```{r}
+# The Credit.xlsx file contains information about customers of a certain bank who were granted a consumer loan. The individual variables mean:                                                            
+#• y - variable describing whether the client has paid off the loan (0) or has not paid off the loan (1);
+#• x1 - status on the labour market (1 - pensioner, 0 - working person);
+#• x2 - place of residence (1 - city, 0 - village);
+#• x3 - education (1 - other, 0 - higher);
+#• x4 - age;
+#• x5 - gender (1 - male, 0 - female).
+
+# Load the dataset
+file_path <- "Credit.xlsx"
+credit_data <- read_excel(file_path)
+
+# Recode y (0 - "Paid", 1 - "Not Paid")
+credit_data$y <- ifelse(credit_data$y == 0, "Paid", "Not Paid")
+credit_data$y <- as.factor(credit_data$y)  # Convert to factor
+
+# Fit logistic regression model
+model <- glm(y ~ x1 + x2 + x3 + x4 + x5, data = credit_data, family = 'binomial')
+
+# Display model summary
+summary(model)
+
+# Assign model coefficients
+a0 <- model$coefficients[1]
+a1 <- model$coefficients[2]
+a2 <- model$coefficients[3]
+a3 <- model$coefficients[4]
+a4 <- model$coefficients[5]
+a5 <- model$coefficients[6]
+
+cat("Coefficients: a0 =", a0, ", a1 =", a1, ", a2 =", a2, ", a3 =", a3, ", a4 =", a4, ", a5 =", a5, "\n")
+
+# Compute predicted probabilities
+theor <- predict(model, type = "response")
+print(theor)
+
+prob <- as.data.frame(theor)
+
+# Create an ID column for merging
+prob$ID <- as.numeric(rownames(prob))
+
+# Merge predictions back into the original dataset
+credit_data$ID <- as.numeric(rownames(credit_data))
+data_all <- left_join(credit_data, prob, by = "ID")
+
+# Assign loan default predictions based on a threshold of 0.5
+data_all$y_pred <- ifelse(data_all$theor < 0.5, "Paid", "Not Paid")
+
+# Create confusion matrix
+conf_matrix <- table(data_all$y, data_all$y_pred)
+print(conf_matrix)
+```
+
+
+```{r}
+
+# The Data.xlsx file contains actual data describing the most important economic indicators for 2021 by province in Poland (Data sheet). The Variables sheet in turn contains a description of these variables. Based on the data:
+
+# Import Data
+data <- read_excel('Data.xlsx', sheet = "Data") %>%
+  mutate(JPT_KOD_JE = as.character(JPT_KOD_JE))
+
+variables <- read_excel('Data.xlsx', sheet = "Variables")
+
+# TOPSIS ranking
+# Create xij matrix with selected variables
+xij <- data %>% select(3:14) %>% as.matrix()
+
+# Create a vector with stimulants (+) and destimulants(-). Here, all are marked as stimulants.
+var_sd <- c('+','+','+','+','+','+','+','+','+','+','+','+')
+
+# Create a vector of equal weights for all variables
+w <- c(1,1,1,1,1,1,1,1,1,1,1,1)
+
+# Compute the TOPSIS ranking
+data$R <- topsis(xij, w, var_sd)[, 2]
+
+# Plot the TOPSIS ranking
+data %>% arrange(R) %>% ggplot(aes(x=factor(Province, levels=Province), y=R))+
+  geom_point()+
+  geom_text(aes(label = round(R, 2)), hjust = -0.2, size = 4)+
+  coord_flip()+
+  theme_bw()+
+  labs(x='Provinces', y='TOPSIS Score', title = "TOPSIS Economic Development Ranking of each Polish Province (2021)")
+
+# Map Visualization - Spatial Distribution of Economic Development
+# Load the Poland shp file with provinces
+poland_map <- read_sf("Wojewodztwa.shp") 
+
+# Merge the spatial data with the TOPSIS results
+map_data <- left_join(poland_map, data, by = "JPT_KOD_JE")
+
+# Plot the spatial distribution of the TOPSIS index
+tm_shape(map_data) +
+  tm_polygons(col = "R", palette = "Blues", title = "TOPSIS Score") +
+  tm_layout(main.title = "Economic Development Ranking by Province (TOPSIS)", legend.outside = TRUE)
+
+# Histogram for X1 (GDP per Capita)
+ggplot(data, aes(x = X1)) +
+  geom_histogram(bins = 5, fill = "blue", color = "black", alpha = 0.7) +
+  theme_bw() +
+  labs(x = "GDP per Capita (X1)", y = "Frequency", title = "Histogram of GDP per Capita") +
+  scale_x_continuous(labels = comma)  
+
+# Bar chart for X5 (Investment Outlays per Capita)
+ggplot(data, aes(x = reorder(Province,X5), y = X5, fill = X5)) + 
+  geom_bar(stat = "identity", color = "black") +
+  theme_minimal() +  # Clean theme
+  scale_y_continuous(labels = comma) +  
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +  
+  labs(
+    x = "Province",
+    y = "Investment Outlays per Capita (X5)",
+    title = "Bar Chart of Investment Outlays"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Boxplot for X8 (Unemployment Rate)
+ggplot(data, aes(y = X8, x = "")) +  # x = "" centers the boxplot
+  geom_boxplot(fill = "lightblue", color = "black", outlier.shape = 16, outlier.color = "red") +
+  theme_bw() +
+  labs(
+    y = "Unemployment Rate (X8)",
+    x = "",
+    title = "Boxplot of Unemployment Rate",
+  )
+
+# Compute Descriptive Statistics for a Selected Variable (X1 - GDP per Capita)
+summary_stats <- data %>%
+  summarise(
+    Mean = mean(X1, na.rm = TRUE),
+    Median = median(X1, na.rm = TRUE),
+    SD = sd(X1, na.rm = TRUE),
+    Q1 = quantile(X1, 0.25, na.rm = TRUE),
+    Q3 = quantile(X1, 0.75, na.rm = TRUE)
+  )
+
+print(summary_stats)
+
+# Create a Binary GDP Variable and Plot a Bar Chart
+data <- data %>%
+  mutate(GDP = ifelse(X1 > 50000, 1, 0))
+
+# Bar chart for the GDP category
+ggplot(data, aes(x = factor(GDP))) +
+  geom_bar(fill = "steelblue") +
+  theme_bw() +
+  labs(x = "GDP Category (0: ≤ 50K PLN, 1: > 50K PLN)", y = "Number of Provinces", title = "GDP Category Distribution")
+
+```
+
